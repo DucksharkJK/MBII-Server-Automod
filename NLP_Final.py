@@ -8,7 +8,7 @@ import pandas as pd
 import spacy
 
 import pkg_resources
-from symspellpy import SymSpell, Verbosity
+from symspellpy import SymSpell
 
 from sklearn.feature_extraction.text import CountVectorizer,TfidfVectorizer
 from sklearn.base import TransformerMixin
@@ -34,7 +34,10 @@ vector_data = {u"sith": np.random.uniform(-1, 1, (300,)),
                u"lmao": np.random.uniform(-1, 1, (300,)),
                u"lol": np.random.uniform(-1, 1, (300,)),
                u"rofl": np.random.uniform(-1, 1, (300,)),
+               u"mblock": np.random.uniform(-1, 1, (300,)),
+               u"pblock": np.random.uniform(-1, 1, (300,)),
                u"rtv": np.random.uniform(-1, 1, (300,))}
+
 vocab = nlp.vocab  # Get the vocab from the model
 for word, vector in vector_data.items():
     vocab.set_vector(word, vector)
@@ -50,7 +53,6 @@ def spacy_tokenizer(sentence):
     # Removing stop words
     mytokens = [word for word in mytokens if word not in stop_words and word not in punctuations]
 
-    print(mytokens)
     # return preprocessed list of tokens
     return mytokens
 
@@ -78,7 +80,7 @@ tfidf_vector = TfidfVectorizer(tokenizer = spacy_tokenizer)
 X = df_moviebattles['Chats'] # the text we want to analyze
 ylabels = df_moviebattles['Slurs_Racism'] # the labelled answers we want to test against
 
-X_train, X_test, y_train, y_test = train_test_split(X, ylabels, test_size=0.4, random_state=42)
+X_train, X_test, y_train, y_test = train_test_split(X, ylabels, test_size=0.01, random_state=42)
 
 # Logistic Regression Classifier
 from sklearn.linear_model import LogisticRegression
@@ -89,49 +91,15 @@ pipe = Pipeline([("cleaner", predictors()),
                  ('vectorizer', bow_vector),
                  ('classifier', classifier)])
 
-# model generation
+# Model generation
 pipe.fit(X_train,y_train)
 
-from sklearn import metrics
-# Predicting with a test dataset
-predicted = pipe.predict(X_test)
-
-# Model Accuracy
-print("Logistic Regression Accuracy:",metrics.accuracy_score(y_test, predicted))
-print("Logistic Regression Precision:",metrics.precision_score(y_test, predicted))
-print("Logistic Regression Recall:",metrics.recall_score(y_test, predicted))
-
-print("NLP Pipeline online.")
-
+# Text corrects the inputted text based on dictionary listed (should be custom dictionary as provided)
 def autocorrect(input_text):    
     result = sym_spell.word_segmentation(input_text)
     return pipe.predict([result.corrected_string])[0]
 
-def text_analysis(input_list):
-    output_list = []
-
-    for sentence in input_list:
-        sentence_score = []
-        sentence_score.append(max([autocorrect(sentence), autocorrect("".join(sentence.split())), pipe.predict([sentence])[0]]))
-
-        output_list.append(sentence_score[0])
-
-    print(output_list)
-
-list_of_inputs = ["fuck you jedi nigger", 
-                    "shut the fuck up you fucking retard", 
-                    "get rekt you goddamn idiot faggot",
-                    "you fucking n1ggers need to shut up",
-                    "Ihatealltheniggerswhoonlyplayjedi", 
-                    "fuck this game dude holy fucking shit",
-                    "these fagg0ts need to learn to shut up",
-                    "This retard sith needs to learn to push those clones",
-                    "The jews are the f4gg0ts of the earth",
-                    "fuckn1gg3rs",
-                    "f u c k n i g g e r s",
-                    "these f4gs need to jump off a bridge",
-                    "kill all the n1gg3rs"]
-
-text_analysis(list_of_inputs)
-
-# print(pipe.predict(list_of_inputs))
+# Returns the analysis of various corrected/concatenated versions of the inputted text based on the trained pipeline
+def text_analysis(text_to_analyze):
+    sentence_score = max([autocorrect(text_to_analyze), autocorrect("".join(text_to_analyze.split())), pipe.predict([text_to_analyze])[0]])
+    return sentence_score
