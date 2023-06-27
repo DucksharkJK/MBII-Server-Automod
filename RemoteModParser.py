@@ -1,7 +1,7 @@
 # AUTOMATIC MOVIE BATTLES II RCON MODERATOR - PARSER
 # CONTACT "devoidjk" ON DISCORD WITH ISSUES, SUGGESTIONS, ETC
 # COMPATIBLE WITH BOTH VANILLA MBII AND BULLY'S LOG SCHEMA
-# LAST EDITED 6/25/23, v0.1
+# LAST EDITED 6/27/23, v0.1
 
 import re
 
@@ -31,18 +31,6 @@ def parser(timestamp, content):
         print(client_disconnect_list)
 
         return client_disconnect_list
-
-    elif re.search(r"^ClientBegin: ([0-9]{1,2})$", content):
-        client_begin_list = [timestamp, "ClientBegin"]
-
-        client_begin_tuple = re.match(r"^ClientBegin: ([0-9]{1,2})$", content).groups()
-
-        for item in client_begin_tuple:
-            client_begin_list.append(item)
-
-        print(client_begin_list)
-
-        return client_begin_list
 
     elif re.search(r"^ClientUserinfoChanged: ([0-9]{1,2}) (.*)$", content):
         client_user_info_changed_list = [timestamp, "ClientUserInfoChanged"]
@@ -97,9 +85,21 @@ def parser(timestamp, content):
         print(kill_list)
 
         return kill_list
+    
+    elif re.search(r"^ShutdownGame:", content):
+        shutdown_game_list = [timestamp, "ShutdownGame"]
+
+        shutdown_game_tuple = re.match(r"^ShutdownGame:", content).groups()
+
+        for item in shutdown_game_tuple:
+            shutdown_game_list.append(item)
+
+        print(shutdown_game_list)
+
+        return shutdown_game_list
 
     elif re.search(r"^([0-9]{1,2}): (say|sayteam): (.*?)\u0019?: \"(.*)\"$", content):
-        say_list = [timestamp, "Say"]
+        say_list = [timestamp, "SayDetailed"]
 
         say_tuple = re.match(r"^([0-9]{1,2}): (say|sayteam): (.*?)\u0019?: \"(.*)\"$", content).groups()
 
@@ -122,24 +122,5 @@ def parser(timestamp, content):
 
         return say_list
     
-
-# Making blank server slots. Template is serverslot:["in-game name", "IP address", "team", # of chat infractions, # of teamkills, rounds played]
-server_slots = {}
-for x in range(0, 32):
-    server_slots[x]=["", "", "", 0, 0, 0]
-
-def modification(input_list):
-    if input_list[1] == "ClientConnect":
-        server_slots[input_list[4]][1] = str(input_list[3])
-        server_slots[input_list[4]][2] = str(input_list[5]) + ":" + str(input_list[6])
-        print(server_slots)
-    elif input_list[1] == "ClientDisconnect":
-        server_slots[input_list[3]][1] = ""
-    elif input_list[1] == "ClientBegin":
-        server_slots[input_list[3]][1] = ""
-    elif input_list[1] == "ClientUserInfoChanged":
-        #stuff
-    elif input_list[1] == "ClientSpawned":
-        #stuff
-    elif input_list[1] == "Say":
-        #stuff
+    else:
+        return [0, "Null"]
