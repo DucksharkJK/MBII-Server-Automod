@@ -1,7 +1,7 @@
 # AUTOMATIC MOVIE BATTLES II RCON MODERATOR
 # CONTACT "devoidjk" ON DISCORD WITH ISSUES, SUGGESTIONS, ETC
 # COMPATIBLE WITH BOTH VANILLA MBII AND BULLY'S LOG SCHEMA
-# LAST EDITED 6/25/23, v0.1
+# LAST EDITED 6/27/23, v0.1
 
 import discord
 import datetime
@@ -9,12 +9,14 @@ from socket import (socket, AF_INET, SOCK_DGRAM, SHUT_RDWR, timeout as socketTim
 
 import time
 
-from RemoteModParser import parser, modification
+from RemoteModParser import parser
+from NLP_Final import text_analysis
 
 # Load bot permissions
 intents = discord.Intents.default()
 intents.message_content = True
 
+# Initialization for Discord.py integration
 class aclient(discord.Client):
     def __init__(self):
         super().__init__(intents = intents)
@@ -30,42 +32,20 @@ class aclient(discord.Client):
             self.added = True
         print(f"Remote Mod Online.")
 
+# Returns date and time for logging purposes in Discord
 current_date_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
 
+# Definiting client and tree for Discord, as well as global variables for servers/passwords/etc.
 client = aclient()
 tree = discord.app_commands.CommandTree(client)
 guild_id = 902568491218002010 # ID of guild the bot will operate in
-TOKEN = "MTA3NTA2NTI5NjkxMTU5NzY1MA.G7LXDp.tPIvcxNgkCCKqQK1wkj2InFhzRccqb-DQrIOl0" # Token of bot to use.
+TOKEN = "" # Token of bot to use.
 log_path = "C:\Program Files\Star Wars Jedi Knight - Jedi Academy\GameData\MBII\games.log" # Path of logging file to tail
+server_IP_address = '192.168.1.223:29070' # IP of server to moderate
+rcon_password = 'operation' # RCON password of server to moderate
 
-# Making blank server slots. Template is serverslot:["in-game name", "IP address", "team", # of chat infractions, # of teamkills, rounds played]
-server_slots = {}
-for x in range(0, 32):
-    server_slots[x]=["", "", "", 0, 0, 0]
-
-def follow(log_file):
-    log_file.seek(0,2)
-    while True:
-        line = log_file.readline()
-        if not line:
-            time.sleep(0.1)
-            continue
-        yield line
-
-def log_tailing():
-    logfile = open(log_path)
-    loglines = follow(logfile)
-    for line in loglines:
-        timestamp = line[:7]
-        content = line[7:]
-        line_content = parser(timestamp, content)
-        modification(line_content)
-
-log_tailing()
-
+# Send commands to the server via rcon. Wrapper class.
 class Rcon(object):
-
-    """Send commands to the server via rcon. Wrapper class."""
 
     def __init__(self, address, bindaddr, rcon_pwd):
 
@@ -82,6 +62,7 @@ class Rcon(object):
         sock.connect(self.address)
         send = sock.send
         recv = sock.recv
+        output = ''
 
         while(True): # Make sure an infinite loop is placed until the command is successfully received.
             try:
@@ -93,11 +74,12 @@ class Rcon(object):
                 unfiltered_response = receive.decode('cp1252')
                 filtered_response = unfiltered_response.replace("\xFF\xFF\xFF\xFFprint", "")
 
-                print(filtered_response)
+                output += filtered_response
 
             except socketTimeout:
                 print("timeout")
-                continue
+                return output
+
             except socketError:
                 print("error")
                 break
@@ -141,7 +123,81 @@ class Rcon(object):
     def tempban(self, player_id, rounds):
         self._send("\xff\xff\xff\xffrcon %s tempban %i %f" % (self.rcon_pwd, player_id, rounds))
 
-rcon = Rcon("192.168.1.223:29071", "0.0.0.0", "operation")
+rcon = Rcon(server_IP_address, "0.0.0.0", rcon_password)
+
+# Making blank server slots.
+server_slots = dict()
+for x in range(0, 32):
+    server_slots[x]={'name': '', 'IP': '', 'team': '', 'chat_infractions': 0, 'RTV_count': 0, 'teamkills': 0, 'rounds': 0}
+
+# Modification of server slots dictionary based on RemoteModParser.py
+def modification(input_list):
+    print(input_list)
+
+    if str(input_list[1]) == "ClientConnect":
+        server_slots[int(input_list[3])]['name'] = str(input_list[2])
+        server_slots[int(input_list[3])]['IP'] = str(input_list[4]) + ":" + str(input_list[5])
+        print(server_slots)
+    elif str(input_list[1]) == "ClientDisconnect":
+        server_slots[int(input_list[2])]['name'] = ""
+        server_slots[int(input_list[2])]['team'] = ""
+        print(server_slots)
+    elif str(input_list[1]) == "ClientUserInfoChanged":
+        server_slots[int(input_list[2])]['name'] = input_list[3]
+        print(server_slots)
+    elif str(input_list[1]) == "ClientSpawned":
+        server_slots[int(input_list[2])]['name'] = input_list[3]
+        server_slots[int(input_list[2])]['team'] = input_list[4]
+        print(server_slots)
+    elif str(input_list[1]) == "Kill":
+        if -1 < int(input_list[2]) < 32:
+            if server_slots[int(input_list[2])]['team'] == server_slots[int(input_list[3])]['team'] and int(input_list[2]) != int(input_list[3]):
+                server_slots[int(input_list[2])]['teamkills'] += 1
+        print(server_slots)
+    elif str(input_list[1]) == "SayDetailed":
+        if text_analysis(str(input_list[5])) == 1:
+            server_slots[int(input_list[2])]['chat_infractions'] += 1
+            rcon.tempmute(int(input_list[2]), 2)
+            rcon.svsay("No toxicity, racism, or slurs.")
+        elif str(input_list[5]) == "rtv" or "!rtv":
+            server_slots[input_list[2]]['RTV_count'] += 1
+    elif str(input_list[1]) == "Say":
+        for i in server_slots:
+            if str(server_slots[i][0]) == str(input_list[3]):
+                temp_serverslot = {i for i in server_slots if str(server_slots[i][0])==str(input_list[3])}
+                temp_serverslot = int(list(temp_serverslot)[0])
+                if text_analysis(str(input_list[4])) == 1:
+                    server_slots[temp_serverslot]['chat_infractions'] += 1
+                    rcon.tempmute(int(temp_serverslot), 2)
+                    rcon.svsay("No toxicity, racism, or slurs.")
+                elif str(input_list[4]) == "rtv" or str(input_list[4]) == "!rtv":
+                    server_slots[temp_serverslot]['RTV_count'] += 1
+
+# Follows log file and returns any new lines for log_tailing
+def follow(log_file):
+    log_file.seek(0,2)
+    while True:
+        line = log_file.readline()
+        if not line:
+            time.sleep(0.1)
+            continue
+        yield line
+
+# Calls follow, splits the timestamp and content for each new line input, then calls modification if the line is relevant
+def log_tailing():
+    logfile = open(log_path)
+    loglines = follow(logfile)
+    for line in loglines:
+        timestamp = line[:7]
+        content = line[7:]
+        line_content = parser(timestamp, content)
+
+        if str(line_content[1]) != "Null":
+            modification(line_content)
+        else:
+            pass
+
+log_tailing()
 
 @tree.command(description='Broadcasts message as server in game chat', guild=discord.Object(guild_id))
 async def svsay(interaction: discord.Interaction, message: str):
