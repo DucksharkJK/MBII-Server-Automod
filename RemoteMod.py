@@ -10,16 +10,37 @@ import datetime
 import time
 
 from multiprocessing import Process
-from socket import (socket, AF_INET, SOCK_DGRAM, SHUT_RDWR, timeout as socketTimeout, error as socketError)
 
 import configparser
 
 from RemoteModParser import parser
 from NLP_Final import text_analysis
+from RCON_Class import Rcon
 
 # Load bot permissions
 intents = discord.Intents.default()
 intents.message_content = True
+
+# Read config settings for globals (guild ID, token, logging file path, server IP, RCON password)
+config = configparser.ConfigParser()
+config.read('automod_config.ini')
+
+guild_id: int = config['DISCORD_SETTINGS']['GUILD_ID'] # ID of guild the bot will operate in
+TOKEN: str = config['DISCORD_SETTINGS']['TOKEN'] # Token of bot to use.
+log_path: str = config['LOG_FILE_SETTINGS']['LOG_FILE_PATH'] # Path of logging file to tail
+server_IP_address: str = config['MBII_SERVER_SETTINGS']['SERVER_IP_ADDRESS'] # IP of server to moderate
+rcon_password: str = config['MBII_SERVER_SETTINGS']['RCON_PASSWORD'] # RCON password of server to moderate
+
+rcon = Rcon(server_IP_address, "0.0.0.0", rcon_password)
+
+RTV_strings = ('rtv', '!rtv', 'unrtv', '!unrtv')
+red_team_count = 0
+blue_team_count = 0
+server_broadcast_list = []
+
+# Returns date and time for logging purposes in Discord
+current_date_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
+server_broadcast_deadline = datetime.datetime.now()
 
 # Initialization for Discord.py integration
 class aclient(discord.Client):
@@ -37,112 +58,9 @@ class aclient(discord.Client):
             self.added = True
         print(f"Remote Mod Online.")
 
-# Returns date and time for logging purposes in Discord
-current_date_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
-
 # Definiting client and tree for Discord
 client = aclient()
 tree = discord.app_commands.CommandTree(client)
-
-# Read config settings for globals (guild ID, token, logging file path, server IP, RCON password)
-config = configparser.ConfigParser()
-config.read('automod_config.ini')
-
-guild_id: int = config['DISCORD_SETTINGS']['GUILD_ID'] # ID of guild the bot will operate in
-TOKEN: str = config['DISCORD_SETTINGS']['TOKEN'] # Token of bot to use.
-log_path: str = config['LOG_FILE_SETTINGS']['LOG_FILE_PATH'] # Path of logging file to tail
-server_IP_address: str = config['MBII_SERVER_SETTINGS']['SERVER_IP_ADDRESS'] # IP of server to moderate
-rcon_password: str = config['MBII_SERVER_SETTINGS']['RCON_PASSWORD'] # RCON password of server to moderate
-
-RTV_strings = ('rtv', '!rtv', 'unrtv', '!unrtv')
-red_team_count = 0
-blue_team_count = 0
-server_broadcast_list = []
-server_broadcast_deadline = datetime.datetime.now()
-
-# Send commands to the server via rcon. Wrapper class.
-class Rcon(object):
-
-    def __init__(self, address, bindaddr, rcon_pwd):
-
-        address_list = str.split(str.strip(address), ":")
-        address_list[1] = int(address_list[1])
-        self.address = tuple(address_list)
-        self.bindaddr = bindaddr
-        self.rcon_pwd = rcon_pwd
-
-    def _send(self, payload, buffer_size=1024): # This method shouldn't be used outside the scope of this object's wrappers.
-        sock = socket(AF_INET, SOCK_DGRAM) # Socket descriptor sending/receiving rcon commands to/from the server.
-        sock.bind((self.bindaddr, 0)) # Setting port as 0 will let the OS pick an available port for us.
-        sock.settimeout(1)
-        sock.connect(self.address)
-        send = sock.send
-        recv = sock.recv
-        output = ''
-
-        while(True): # Make sure an infinite loop is placed until the command is successfully received.
-            try:
-                send(payload.encode('cp1252'))
-                receive = recv(buffer_size)
-                if not receive:
-                    break
-
-                unfiltered_response = receive.decode('cp1252')
-                filtered_response = unfiltered_response.replace("\xFF\xFF\xFF\xFFprint", "")
-
-                output += filtered_response
-
-            except socketTimeout:
-                print("timeout")
-                return output
-
-            except socketError:
-                print("error")
-                break
-        
-        sock.shutdown(SHUT_RDWR)
-        sock.close()
-
-    def say(self, msg):
-        self._send("\xff\xff\xff\xffrcon %s say %s" % (self.rcon_pwd, msg), 2048)
-
-    def svsay(self, msg):
-        self._send("\xff\xff\xff\xffrcon %s svsay %s" % (self.rcon_pwd, msg))
-
-    def status(self):
-        self._send("\xff\xff\xff\xffrcon %s status" % (self.rcon_pwd))
-
-    def who(self):
-        self._send("\xff\xff\xff\xffrcon %s who" % (self.rcon_pwd))
-
-    def newround(self):
-        self._send("\xff\xff\xff\xffrcon %s newround" % (self.rcon_pwd))
-
-    def map(self, map_name):
-        self._send("\xff\xff\xff\xffrcon %s map %f" % (self.rcon_pwd, map_name))
-
-    def mbmode(self, cmd):
-        self._send("\xff\xff\xff\xffrcon %s mbmode %s" % (self.rcon_pwd, cmd))
-
-    def tempmute(self, player_id, duration):
-        self._send("\xff\xff\xff\xffrcon %s mute %i %f" % (self.rcon_pwd, player_id, duration))
-
-    def unmute(self, player_id):
-        self._send("\xff\xff\xff\xffrcon %s unmute %i" % (self.rcon_pwd, player_id))
-
-    def settk(self, player_id, tk_points):
-        self._send("\xff\xff\xff\xffrcon %s settk %i %f" % (self.rcon_pwd, player_id, tk_points))
-
-    def marktk(self, player_id, duration):
-        self._send("\xff\xff\xff\xffrcon %s marktk %i %f" % (self.rcon_pwd, player_id, duration))    
-
-    def clientkick(self, player_id):
-        self._send("\xff\xff\xff\xffrcon %s clientkick %i" % (self.rcon_pwd, player_id))
-
-    def tempban(self, player_id, rounds):
-        self._send("\xff\xff\xff\xffrcon %s tempban %i %f" % (self.rcon_pwd, player_id, rounds))
-
-rcon = Rcon(server_IP_address, "0.0.0.0", rcon_password)
 
 # Making blank server slots.
 server_slots = dict()
@@ -263,7 +181,6 @@ def modification(input_list):
                 elif str(input_list[4]).lower() in RTV_strings or str(input_list[4]).lower().startswith('!nominate'):
                     server_slots[temp_serverslot]['RTV_count'] += 1
 
-
 # Follows log file and returns any new lines for log_tailing
 def follow(log_file):
     log_file.seek(0,2)
@@ -323,9 +240,9 @@ async def server_broadcast(interaction: discord.Interaction, message: str, secon
 @tree.command(description='Broadcasts message as server in game chat', guild=discord.Object(guild_id))
 async def svsay(interaction: discord.Interaction, message: str):
     if len(message) < 142:
-        rcon.svsay(f"{message}")
-        await interaction.response.send_message(f'/rcon svsay **{message}** was sent by {interaction.user.mention} at {current_date_time}!', 
-                                                allowed_mentions=discord.AllowedMentions(roles=False, users=False, everyone=False))
+        # rcon.svsay(f"{message}")
+        # await interaction.response.send_message(f'/rcon svsay **{message}** was sent by {interaction.user.mention} at {current_date_time}!', 
+        #                                         allowed_mentions=discord.AllowedMentions(roles=False, users=False, everyone=False))
         
         svsay_embed = discord.Embed(title="svsay Command", color=discord.color.blue())
         svsay_embed.set_author(name=f'{interaction.user.mention}', icon_url=interaction.user.avatar.url)
